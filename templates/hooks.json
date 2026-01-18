@@ -1,0 +1,42 @@
+{
+  "UserPromptSubmit": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "~/.claude/scripts/notify-working.sh"
+        }
+      ]
+    }
+  ],
+  "Stop": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "~/.claude/scripts/notify-stop.sh"
+        }
+      ]
+    }
+  ],
+  "Notification": [
+    {
+      "matcher": "idle_prompt",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "~/.claude/scripts/notify-idle.sh"
+        }
+      ]
+    },
+    {
+      "matcher": "permission_prompt",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "~/.claude/scripts/notify-permission.sh"
+        }
+      ]
+    }
+  ]
+}

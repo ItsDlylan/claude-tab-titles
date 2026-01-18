@@ -1,0 +1,12 @@
+# macOS
+.DS_Store
+
+# Backups created during install/uninstall
+*.backup.*
+
+# Editor files
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
