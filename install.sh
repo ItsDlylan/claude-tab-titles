@@ -65,6 +65,17 @@ for script in "$SCRIPT_DIR/scripts/"*.sh; do
     echo -e "  ${GREEN}✓${NC} Installed $script_name"
 done
 
+# Install config file (only if it doesn't exist - preserve user customizations)
+echo -e "\n${BLUE}Setting up configuration...${NC}"
+CONFIG_FILE="$HOME/.claude/tab-titles.conf"
+if [[ -f "$CONFIG_FILE" ]]; then
+    echo -e "  ${YELLOW}Config file already exists at $CONFIG_FILE${NC}"
+    echo -e "  ${YELLOW}Keeping your existing configuration.${NC}"
+else
+    cp "$SCRIPT_DIR/templates/config.sh" "$CONFIG_FILE"
+    echo -e "  ${GREEN}✓${NC} Created config file at $CONFIG_FILE"
+fi
+
 # Check if wrapper is already installed
 MARKER_START="# Claude Code Tab Titles - Shell Wrapper"
 MARKER_END="# End Claude Code Tab Titles"
@@ -154,4 +165,11 @@ echo -e "  🔄 working    - Processing your request"
 echo -e "  ✓ done       - Finished"
 echo -e "  ⏳ waiting    - Idle, needs attention"
 echo -e "  ⚠️  permission - Needs your approval"
+echo ""
+echo -e "${BLUE}Customize your setup:${NC}"
+echo -e "  Edit ${YELLOW}~/.claude/tab-titles.conf${NC} to:"
+echo -e "  • Add ticket IDs (Linear, Jira, Trello, Asana, etc.)"
+echo -e "  • Change the title format"
+echo -e "  • Customize status icons"
+echo -e "  • Enable/disable notifications"
 echo ""

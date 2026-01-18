@@ -1,21 +1,18 @@
 #!/bin/bash
 # Hook: Claude finished working
 
-# Get session-specific title file using TTY from environment
-TTY_ID="${CLAUDE_TTY_ID:-$(tty | tr '/' '_')}"
-TITLE_FILE="$HOME/.claude/current-title-$TTY_ID"
+# Load helper functions and config
+source "$HOME/.claude/scripts/title-helper.sh"
 
-# Get project and branch for title
-project=$(basename "$PWD")
-branch=$(git branch --show-current 2>/dev/null || echo "no-git")
+# Update tab title
+write_title "done"
 
-# Update tab title to show done (only affects THIS tab)
-echo "#$project #$branch ✓ done" > "$TITLE_FILE"
-
-# Send macOS notification
-if command -v osascript &>/dev/null; then
-    osascript -e 'display notification "Claude finished working" with title "Claude Code" sound name "Glass"'
+# Send notification if enabled
+if [[ "$NOTIFY_STOP" == "true" ]]; then
+    send_notification "Claude finished working" "Glass"
 fi
 
-# Ring terminal bell (works with Ghostty, iTerm2, etc.)
-printf '\a'
+# Ring bell if enabled
+if [[ "$BELL_STOP" == "true" ]]; then
+    ring_bell
+fi
