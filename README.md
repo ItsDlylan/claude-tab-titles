@@ -2,7 +2,12 @@
 
 Automatic terminal tab titles for [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) showing your project, git branch, and current status.
 
-![Tab Title Demo](https://via.placeholder.com/600x100?text=%23MyProject+%23main+%E2%9C%93+done)
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ #MyProject #main ⏳ ready │ #API #feature 🔄 working │ #App #dev ✓ done     │
+└──────────────────────────────────────────────────────────────────────────────┘
+  Tab 1: Waiting for input     Tab 2: Claude working      Tab 3: Task complete
+```
 
 ## Features
 
@@ -27,7 +32,7 @@ Automatic terminal tab titles for [Claude Code CLI](https://docs.anthropic.com/e
 ### Quick Install
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/claude-tab-titles.git
+git clone https://github.com/ItsDlylan/claude-tab-titles.git
 cd claude-tab-titles
 ./install.sh
 ```
