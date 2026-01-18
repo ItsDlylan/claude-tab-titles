@@ -461,6 +461,135 @@ Here's the complete flow when you submit a prompt:
 
 Total time: ~10-50ms (instant with fswatch, up to 1s with polling)
 
+## Claude Code Skills Integration
+
+[Claude Code Skills](https://docs.anthropic.com/en/docs/claude-code/tutorials/custom-slash-commands) are custom slash commands that extend Claude's capabilities. You can create skills to rename your terminal tab on-demand or integrate tab renaming into your existing workflow skills.
+
+### Creating a `/name-tab` Skill
+
+Create the skill file at `.claude/skills/name-tab/SKILL.md` in your project (or `~/.claude/skills/name-tab/SKILL.md` for global access):
+
+```markdown
+---
+name: name-tab
+description: Rename the terminal tab with #project #branch #task pattern.
+---
+
+# Name Terminal Tab
+
+Rename the current terminal tab/window with a clear, identifiable pattern.
+
+**Format:** `#project #branch #task`
+
+**Arguments:** `$ARGUMENTS` (optional: task description)
+
+---
+
+## Steps to Execute
+
+### Step 1: Detect Project Name
+
+Get the project name from the current working directory:
+
+\`\`\`bash
+basename "$(pwd)"
+\`\`\`
+
+If in a worktree, extract the main project name.
+
+### Step 2: Detect Current Branch
+
+\`\`\`bash
+git branch --show-current 2>/dev/null || echo "no-git"
+\`\`\`
+
+Simplify long branch names:
+- `feature/card-search` → `card-search`
+- `fix/bug-123` → `bug-123`
+
+### Step 3: Determine Task Description
+
+If `$ARGUMENTS` was provided, use it as the task.
+
+Otherwise, ask the user:
+> "What task are you working on? (1-3 words, use hyphens)"
+
+### Step 4: Update Terminal Title
+
+Write the title to the watcher file:
+
+\`\`\`bash
+~/.claude/scripts/set-title.sh "#PROJECT #BRANCH #TASK"
+\`\`\`
+
+Replace PROJECT, BRANCH, and TASK with actual values.
+
+### Step 5: Confirm to User
+
+Display:
+
+\`\`\`
+✅ Tab renamed: #PokemonTCG #develop #fixing-tests
+\`\`\`
+
+---
+
+## Examples
+
+| Command | Result |
+|---------|--------|
+| `/name-tab` | Asks for task, then sets title |
+| `/name-tab debugging` | Sets to `#project #branch #debugging` |
+| `/name-tab price-scraper` | Sets to `#project #branch #price-scraper` |
+```
+
+### Integrating Tab Naming into Workflow Skills
+
+If you have workflow skills that set up development environments (like git worktrees, database resets, or feature branches), you can add automatic tab renaming as a final step.
+
+**Example: Adding to a worktree/feature setup skill**
+
+Add this step at the end of your existing workflow skill:
+
+```markdown
+### Step N: Rename Terminal Tab
+
+Automatically rename the terminal tab to reflect the new work context:
+
+1. Extract the task name from the branch (e.g., `feature/card-search` → `card-search`)
+2. Get the project name from the directory
+3. Call the title script:
+
+\`\`\`bash
+~/.claude/scripts/set-title.sh "#PROJECT #BRANCH #TASK"
+\`\`\`
+
+This happens automatically - no user input needed.
+```
+
+**Why integrate vs. chain skills?**
+
+Claude Code skills run independently - you can't chain them like `/tier2 /name-tab`. By integrating tab renaming directly into your workflow skill, the rename happens automatically as part of the setup process.
+
+### Adding to CLAUDE.md
+
+If you don't use skills, you can add instructions to your project's `CLAUDE.md` file to have Claude rename tabs when starting work:
+
+```markdown
+## Terminal Tab Naming
+
+When starting any new task or feature work, automatically rename the terminal tab:
+
+1. Extract the project name from the current directory
+2. Get the current git branch
+3. Ask the user for a short task description (1-3 words, use hyphens)
+4. Run: `~/.claude/scripts/set-title.sh "#PROJECT #BRANCH #TASK"`
+
+Example: `~/.claude/scripts/set-title.sh "#MyApp #develop #auth-refactor"`
+```
+
+This ensures Claude will rename your tab whenever you start a new conversation about a task.
+
 ## Troubleshooting
 
 ### Tab title not updating
