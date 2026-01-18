@@ -245,6 +245,222 @@ Tab 2: ~/.claude/current-title-_dev_ttys002  →  "ENG-456 #feature ✓ done"
 └─────────────────────┘
 ```
 
+### File Structure
+
+```
+~/.claude/
+├── scripts/
+│   ├── title-helper.sh      # Core: config loading, ticket detection, title building
+│   ├── title-watcher.sh     # Background process watching for title changes
+│   ├── set-title.sh         # Manual title setter (for custom scripts)
+│   ├── notify-working.sh    # Hook: triggered when you submit a prompt
+│   ├── notify-stop.sh       # Hook: triggered when Claude finishes
+│   ├── notify-idle.sh       # Hook: triggered after 60s of inactivity
+│   └── notify-permission.sh # Hook: triggered when Claude needs approval
+├── tab-titles.conf          # Your configuration file
+├── settings.json            # Claude Code settings (includes hooks)
+└── current-title-*          # Session-specific title files (temporary)
+```
+
+### Deep Dive: How It All Works
+
+#### 1. The Shell Wrapper (`claude()` function)
+
+When you type `claude` in your terminal, you're not running the Claude binary directly. Instead, a wrapper function intercepts the command:
+
+```bash
+claude() {
+    # 1. Capture the terminal's unique TTY identifier
+    local tty_id=$(tty | tr '/' '_')  # /dev/ttys001 → _dev_ttys001
+    export CLAUDE_TTY_ID="$tty_id"     # Pass to child processes (hooks)
+
+    # 2. Create a session-specific title file
+    local title_file="$HOME/.claude/current-title-$tty_id"
+
+    # 3. Set initial "ready" state
+    echo "#$project #$branch ⏳ ready" > "$title_file"
+
+    # 4. Start the title watcher in the background
+    ~/.claude/scripts/title-watcher.sh "$tty_id" &
+
+    # 5. Run the actual Claude binary
+    /path/to/claude "$@"
+
+    # 6. Cleanup when Claude exits
+    kill $watcher_pid
+    rm -f "$title_file"
+}
+```
+
+**Why a wrapper?** Claude Code doesn't natively support custom tab titles. The wrapper lets us set up the environment before Claude starts and clean up after it exits.
+
+#### 2. The Title Watcher (`title-watcher.sh`)
+
+This script runs in the background for the entire Claude session, watching for changes to the title file:
+
+```bash
+# Using fswatch (instant updates)
+fswatch -o "$TITLE_FILE" | while read; do
+    title=$(cat "$TITLE_FILE")
+    printf '\033]0;%s\007' "$title"  # ANSI escape sequence to set terminal title
+done
+
+# Or polling fallback (if fswatch not installed)
+while true; do
+    title=$(cat "$TITLE_FILE")
+    printf '\033]0;%s\007' "$title"
+    sleep 1
+done
+```
+
+**Why watch a file?** Claude's hooks run in subprocesses that can't directly control the parent terminal. By writing to a file that the watcher monitors, we bridge this gap.
+
+#### 3. The Configuration System (`title-helper.sh`)
+
+This is the brain of the operation. All notify scripts source this file to get shared functionality:
+
+```bash
+# Every notify script is just:
+source "$HOME/.claude/scripts/title-helper.sh"
+write_title "working"  # or "done", "waiting", "permission"
+```
+
+The helper provides:
+
+- **`load_config()`** - Reads `~/.claude/tab-titles.conf` and sets defaults
+- **`get_project()`** - Gets project name (from `.claude-project` file or directory name)
+- **`get_branch()`** - Gets current git branch
+- **`get_ticket()`** - Detects ticket ID based on configured source (branch/env/file)
+- **`build_title()`** - Assembles the final title string from your format template
+- **`write_title()`** - Writes to the session-specific title file
+
+**Why a shared helper?** Separation of concerns. The notify scripts focus on *when* to update (the trigger), while the helper handles *what* to update (the logic). This means you can change your title format without touching the hook scripts.
+
+#### 4. Claude Code Hooks
+
+Claude Code has a hook system that runs shell commands on specific events. We configure these in `~/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [{ "command": "~/.claude/scripts/notify-working.sh" }],
+    "Stop": [{ "command": "~/.claude/scripts/notify-stop.sh" }],
+    "Notification": [
+      { "matcher": "idle_prompt", "command": "~/.claude/scripts/notify-idle.sh" },
+      { "matcher": "permission_prompt", "command": "~/.claude/scripts/notify-permission.sh" }
+    ]
+  }
+}
+```
+
+| Event | Trigger | Script |
+|-------|---------|--------|
+| `UserPromptSubmit` | You press Enter to send a prompt | `notify-working.sh` |
+| `Stop` | Claude finishes responding | `notify-stop.sh` |
+| `Notification` (idle) | Claude idle for 60+ seconds | `notify-idle.sh` |
+| `Notification` (permission) | Claude needs tool approval | `notify-permission.sh` |
+
+#### 5. Ticket Detection
+
+The `get_ticket()` function supports multiple detection methods:
+
+**Branch Parsing (default):**
+```bash
+branch="feature/ENG-123-add-login"
+pattern="[A-Z]+-[0-9]+"
+ticket=$(echo "$branch" | grep -oE "$pattern" | head -1)
+# Result: ENG-123
+```
+
+**Environment Variable:**
+```bash
+# In your .envrc or shell
+export CLAUDE_TICKET="ENG-123"
+
+# title-helper.sh reads it
+ticket="${!TICKET_ENV_VAR}"  # Indirect variable expansion
+```
+
+**File-based:**
+```bash
+# In your project: echo "ENG-123" > .ticket
+ticket=$(cat "$TICKET_FILE")
+```
+
+#### 6. Why TTY for Session Isolation?
+
+Each terminal tab gets assigned a unique TTY (teletypewriter) device by the operating system:
+
+```
+Tab 1: /dev/ttys001
+Tab 2: /dev/ttys002
+Tab 3: /dev/ttys003
+```
+
+We transform this into a safe filename: `/dev/ttys001` → `_dev_ttys001`
+
+**Why TTY?**
+- **Unique per tab** - Each tab has its own TTY, guaranteed by the OS
+- **Survives the session** - Same TTY from start to finish of Claude
+- **Available everywhere** - Both the wrapper AND the hooks can access it
+- **No coordination needed** - No need to generate/track session IDs
+
+**The Problem It Solves:**
+
+Without per-session isolation, all Claude instances would write to the same file:
+
+```
+# BAD: Shared file
+Tab 1 writes: "#ProjectA #main 🔄 working"
+Tab 2 writes: "#ProjectB #feature ✓ done"    # Overwrites Tab 1!
+Both tabs show: "#ProjectB #feature ✓ done"  # Wrong!
+```
+
+With TTY-based isolation:
+
+```
+# GOOD: Separate files
+Tab 1 writes to: ~/.claude/current-title-_dev_ttys001
+Tab 2 writes to: ~/.claude/current-title-_dev_ttys002
+Each tab shows its own status correctly!
+```
+
+### Lifecycle of a Title Update
+
+Here's the complete flow when you submit a prompt:
+
+```
+1. You type a prompt and press Enter
+         │
+         ▼
+2. Claude Code fires "UserPromptSubmit" hook
+         │
+         ▼
+3. notify-working.sh runs
+         │
+         ▼
+4. sources title-helper.sh
+   ├── load_config() reads ~/.claude/tab-titles.conf
+   ├── get_project() → "MyApp"
+   ├── get_branch() → "feature/ENG-123-task"
+   ├── get_ticket() → "ENG-123" (extracted from branch)
+   └── build_title("working") → "ENG-123 #feature 🔄 working"
+         │
+         ▼
+5. write_title() writes to ~/.claude/current-title-_dev_ttys001
+         │
+         ▼
+6. title-watcher.sh detects file change (via fswatch or polling)
+         │
+         ▼
+7. Sends ANSI escape: printf '\033]0;ENG-123 #feature 🔄 working\007'
+         │
+         ▼
+8. Terminal updates tab title ✨
+```
+
+Total time: ~10-50ms (instant with fswatch, up to 1s with polling)
+
 ## Troubleshooting
 
 ### Tab title not updating
